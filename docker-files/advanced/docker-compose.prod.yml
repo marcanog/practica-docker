@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  webapp:
+    image: ${DOCKER_REGISTRY}/myapp:${TAG:-latest}
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=database
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  database:
+    image: postgres:14-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - webapp
+    networks:
+      - app-network
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == worker
+
+networks:
+  app-network:
+    driver: overlay
+
+volumes:
+  db-data:
+    driver: local
+
